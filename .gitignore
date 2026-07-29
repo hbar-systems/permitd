@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+*.db
+*.db.secret
+*_audit.jsonl
+permitd.secret

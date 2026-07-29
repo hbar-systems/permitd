@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "permitd"
+version = "0.1.0"
+description = "Governed tool execution for agent loops: propose -> permit -> approve -> execute -> audit. Fail-closed, zero dependencies."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "hbar-systems" }]
+keywords = [
+    "agent", "governance", "human-in-the-loop", "mcp", "permits",
+    "approval", "audit", "loop-engineering", "agent-loops", "tool-use",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/hbar-systems/permitd"
+Issues = "https://github.com/hbar-systems/permitd/issues"
+
+[project.scripts]
+permitd = "permitd.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/permitd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
