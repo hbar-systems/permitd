@@ -2,6 +2,8 @@
 
 **Governed tool execution for agent loops.**
 
+![An agent proposes a gated call, a human approves it in another terminal, the call executes, and the audit lines land](docs/demo.gif)
+
 Your agent loop wants to send the email, write the file, hit the API. You want
 a human decision in between — one that an agent cannot fake, replay, or bend
 to different arguments — and a line in an audit log either way.
