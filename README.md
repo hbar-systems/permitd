@@ -5,8 +5,10 @@
 ![An agent proposes a gated call, a human approves it in another terminal, the call executes, and the audit lines land](docs/demo.gif)
 
 Your agent loop wants to send the email, write the file, hit the API. You want
-a human decision in between — one that an agent cannot fake, replay, or bend
+a human decision in between — one that the model cannot skip, replay, or bend
 to different arguments — and a line in an audit log either way.
+([THREAT_MODEL.md](THREAT_MODEL.md) says exactly when that is a boundary and
+when it is a guardrail.)
 
 ```
 propose(tool, args) ──> permit (signed, TTL, single-use)
@@ -145,6 +147,8 @@ matched *shape*, never the value.
 
 ## MCP: gate any agent's tools, including Claude Code's
 
+Five-minute walkthrough: [docs/quickstart-claude-code.md](docs/quickstart-claude-code.md).
+
 [`examples/mcp_server/`](examples/mcp_server/) is an MCP server whose tools go
 through the gate. Point any MCP-speaking agent at it and that agent gets
 propose → approve → execute + audit with **zero agent-side changes**: the
@@ -164,7 +168,8 @@ separate append-only JSONL file so it stays `tail -f`-able.
 
 Not an agent, not a framework, not memory, not RAG. It has no opinion about
 your loop, your model, or your prompts. It is the layer that holds the state
-of "may this run?" across turns — and the receipt after it did.
+of "may this run?" across turns — and the receipt after it did. What it does
+and does not defend against: [THREAT_MODEL.md](THREAT_MODEL.md).
 
 ## Ancestry
 
