@@ -10,6 +10,8 @@ here, the agent's retry executes.
     permitd approve PRM-...
     permitd deny PRM-...
     permitd audit -n 20
+    permitd audit --verify     # walk the hash chain; exit 1 on the first break
+    permitd audit --tip        # hash of the newest line, for off-host anchoring
 
 Store selection: --db, else $PERMITD_DB, else ./permitd.db.
 """
@@ -98,6 +100,16 @@ def cmd_deny(args: argparse.Namespace) -> int:
 
 def cmd_audit(args: argparse.Namespace) -> int:
     _, audit = _kernel(args)
+    if args.tip:
+        print(audit.tip())
+        return 0
+    if args.verify:
+        v = audit.verify()
+        if v.ok:
+            print(f"ok — {v.lines} line(s), chain intact, tip {v.tip}")
+            return 0
+        print(f"BROKEN at line {v.first_bad_line}: {v.reason}", file=sys.stderr)
+        return 1
     records = audit.tail(args.n)
     if not records:
         print("audit log is empty")
@@ -127,6 +139,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.set_defaults(fn=cmd_deny)
     p = sub.add_parser("audit", help="print recent audit lines")
     p.add_argument("-n", type=int, default=20, help="how many lines (default 20)")
+    p.add_argument("--verify", action="store_true", help="check the hash chain end to end")
+    p.add_argument("--tip", action="store_true", help="print the hash of the newest line")
     p.set_defaults(fn=cmd_audit)
 
     ns = parser.parse_args(argv)

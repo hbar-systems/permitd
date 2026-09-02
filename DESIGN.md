@@ -74,7 +74,12 @@ is audited.
   reasons name the matched *shape*, never the value.
 - **Audit.** Append-only JSONL, one line per outcome (proposed, denied,
   expired, blocked, executed, failed), best-effort by contract: an audit write
-  failure must never break the dispatch path. Arg values are trimmed in audit
+  failure must never break the dispatch path (0.2.0: counted in
+  `AuditLog.dropped`). Since 0.2.0 each line carries `prev`, the SHA-256 of
+  the previous line's bytes, read from the file on every write so a Gate and
+  the CLI chain correctly across processes; `verify()` walks it, `tip()` is
+  the anchor for off-host truncation evidence. Unkeyed on purpose (tamper-
+  evident, not tamper-proof; a keyed chain is the listed next step). Arg values are trimmed in audit
   lines; the approval surface, by contrast, always shows full args — it is the
   operator's informed-consent surface and must not truncate.
 

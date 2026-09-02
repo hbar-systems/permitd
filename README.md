@@ -104,6 +104,11 @@ That is the whole product: propose, approve, execute, audit line.
 - **HMAC-signed.** Approval mints
   `HMAC-SHA256(secret, id.binding_hash.approved_at)`, re-verified at execute
   time — a store row edited behind the kernel's back fails (`bad_signature`).
+- **Hash-chained audit.** Every audit line carries the SHA-256 of the line
+  before it. Edit, reorder, or delete any line but the newest and
+  `permitd audit --verify` names the line where the chain breaks. Anchor
+  `permitd audit --tip` off-host and truncation of the newest lines is caught
+  too. Tamper-evident, not tamper-proof (see THREAT_MODEL.md).
 - **Fail-closed everywhere.** Anything the kernel cannot positively verify —
   including "the arguments could not even be inspected" — is a refusal, not a
   pass. Refusals are audited with their reason.
@@ -161,8 +166,20 @@ call executes. The audit line lands either way.
 `SqliteStore` (default, durable, atomic burn) and `MemoryStore` (tests,
 ephemeral) ship in the box. Anything else needs five methods — see the
 `PermitStore` protocol in [`store.py`](src/permitd/store.py); keep `burn`
-compare-and-swap or you lose the one-shot guarantee. The audit trail is a
-separate append-only JSONL file so it stays `tail -f`-able.
+compare-and-swap or you lose the one-shot guarantee.
+
+The audit trail is a separate append-only JSONL file so it stays
+`tail -f`-able. Each line's `prev` field is the hash of the previous line:
+
+```
+$ permitd audit --verify
+ok — 4 line(s), chain intact, tip 9b1c…e4
+$ permitd audit --tip        # store this somewhere the writer can't reach
+9b1c…e4
+```
+
+Writes are best-effort by contract (an audit failure never blocks a call);
+`AuditLog.dropped` counts any lines lost that way.
 
 ## What permitd is not
 

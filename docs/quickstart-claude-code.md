@@ -8,7 +8,7 @@ outcome. Nothing in Claude Code changes; it just gets told "waiting for
 approval" and retries when you say so.
 
 You need Python 3.10+ and Claude Code installed. Tested as pasted on
-macOS with Python 3.14, mcp 2.1.1, permitd 0.1.0.
+macOS with Python 3.14, mcp 2.1.1, permitd 0.2.0.
 
 ## 1. Install (one minute)
 
@@ -101,7 +101,16 @@ permitd --db permitd.db audit
 {"ts": "...", "event": "executed", "permit_id": "PRM-3f9c21ab44de", "tool": "write_note", "args": {"name": "hello", "text": "hi"}, "ok": true}
 ```
 
-That is the whole loop: propose, approve, execute, audit line.
+That is the whole loop: propose, approve, execute, audit line. Each line
+carries the hash of the one before it:
+
+```
+permitd --db permitd.db audit --verify
+```
+
+```
+ok — 3 line(s), chain intact, tip 9b1c…e4
+```
 
 ## Three things worth trying next
 

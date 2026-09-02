@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "permitd"
-version = "0.1.0"
+version = "0.2.0"
 description = "Governed tool execution for agent loops: propose -> permit -> approve -> execute -> audit. Fail-closed, zero dependencies."
 readme = "README.md"
 license = "MIT"

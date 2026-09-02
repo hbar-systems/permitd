@@ -64,6 +64,11 @@ Against a model that can only issue tool calls:
   card is ever shown. The refusal names the matched shape, never the value.
 - **Silent refusals.** Every non-execute outcome writes an audit line with
   its reason.
+- **Quiet edits to the audit trail.** Each line carries the SHA-256 of the
+  previous line's bytes. Editing, reordering, or deleting any line except the
+  newest breaks the chain, and `permitd audit --verify` reports the first
+  broken line. Deleting the newest lines is caught only if you anchored
+  `permitd audit --tip` somewhere the writer cannot reach.
 
 ## What permitd does not defend against
 
@@ -85,11 +90,12 @@ Named so nobody discovers them in production:
   T+200 s against a file whose contents, target, or symlink changed in
   between. If the world can change under you, bind a content hash into the
   args, or shorten the TTL.
-- **Audit log tampering.** The trail is append-only by convention: a JSONL
-  file with no hash chain and no per-entry signature. Anyone with write access
-  can edit or truncate it. Audit writes are also best-effort by contract
-  (a failed write never blocks the call, and is silently dropped). If you
-  need tamper evidence today, ship the file off-host as it grows.
+- **Audit log rewriting by someone with write access and time.** The chain
+  is unkeyed, so it is tamper-evident, not tamper-proof: whoever can write
+  the file can re-chain it end to end. That is the host trust domain again.
+  A tip anchored off-host is the defence. Audit writes are also best-effort
+  by contract (a failed write never blocks the call); `AuditLog.dropped`
+  counts them, and it is your job to look.
 - **Egress guard bypass.** It is a shape scanner. A secret that is base64'd,
   split across arguments, or of a shape it does not know will pass. Treat it
   as a seatbelt, not as data-loss prevention.
@@ -115,19 +121,23 @@ Named so nobody discovers them in production:
 4. Set `PERMITD_SECRET` in an environment the model cannot read, rather than
    letting the secret file sit next to the db.
 5. Keep TTLs short for tools whose targets can change.
-6. `tail -f` the audit file into something append-only elsewhere if anyone
-   will ever ask you to prove what happened.
+6. Record `permitd audit --tip` somewhere the host cannot write (a cron
+   that posts it to another box is enough), and run `permitd audit --verify`
+   before you trust the file in front of anyone.
 
 ## Known gaps, in priority order
 
 These are the honest edges. None is promised; they are listed so you can
 decide whether to wait for them.
 
-1. Hash-chained audit entries (each line carries the previous line's hash),
-   so truncation and edits become detectable.
-2. Approver identity on the approval record, so "who approved" is a fact and
+1. Approver identity on the approval record, so "who approved" is a fact and
    not a filename.
-3. A counter for dropped audit writes, so best-effort does not mean silent.
+2. A keyed chain (HMAC with the kernel secret) so re-chaining needs the secret
+   and not just write access.
+3. A rate limit on `propose`.
+
+Shipped in 0.2.0: the hash chain, `--verify`, `--tip`, and the dropped-write
+counter.
 
 ## Reporting
 
