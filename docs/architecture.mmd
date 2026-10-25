@@ -1,69 +1,76 @@
-%%{init: {"flowchart": {"nodeSpacing": 15, "rankSpacing": 35, "wrappingWidth": 170}}}%%
 %% permitd architecture, drawn from the code as of 2026-10-25
 flowchart TD
-    agent(("agent loop / MCP client (Claude Code)"))
-    operator(("human operator, second terminal"))
-    fs(("filesystem: permitd.db, permitd.db.secret, permitd_audit.jsonl"))
-    pypi(("PyPI: permitd 0.2.0"))
+    agent["calling agent / MCP client (e.g. Claude Code)"]
+    approver["human approver, second terminal"]
+    host["embedding host: a brain runtime such as brainfoundry-nous, or any Python process"]
+    disk["on disk: permitd.db, permitd.db.secret, permitd_audit.jsonl"]
 
-    subgraph pkg_sg["Integration, packaging, CI"]
-        mcp["MCP example server: read_notes GREEN, write_note RED [examples/mcp_server/server.py]"]
-        pyproject["hatchling package, zero deps, extras mcp / dev [pyproject.toml]"]
-        ci["ci: pytest on Python 3.10 to 3.14 [.github/workflows/ci.yml]"]
-        release["release: build + trusted publish on v* tag [.github/workflows/release.yml]"]
-        tests["69 pytest tests: kernel, store, binding, gate, guard, audit, cli [tests/test_*.py]"]
+    subgraph model_sg["Permit model and signing"]
+        permit["Permit dataclass: proposed / approved / denied / executed / expired, public() hides token [src/permitd/permit.py]"]
+        binding["canonical_args + binding_hash = sha256(tool + sorted-key JSON args) [src/permitd/binding.py]"]
+        secret["HMAC secret: load_or_create_secret (0600 file) or PERMITD_SECRET env [src/permitd/kernel.py]"]
+        proto["PermitStore protocol: create / get / update / burn (CAS) / list [src/permitd/store.py]"]
+        sqlite["SqliteStore: durable rows, burn = one atomic UPDATE WHERE status=approved [src/permitd/store.py]"]
+        memory["MemoryStore: in-process, lock-guarded, for tests [src/permitd/store.py]"]
     end
 
-    subgraph gate_sg["Gate: registry and egress guard"]
-        gate["Gate: GREEN / YELLOW / RED registry, call() dispatch, GateResult [src/permitd/gate.py]"]
-        guard["egress guard scan_outbound: credential shapes, env values, entropy [src/permitd/guard.py]"]
+    subgraph flow_sg["Proposal and approval flow"]
+        kernel["PermitKernel.propose / pending / approve / deny: mints HMAC-SHA256 token over id.binding.approved_at, double TTL [src/permitd/kernel.py]"]
     end
 
-    subgraph cli_sg["Operator CLI"]
-        cli["permitd CLI: pending, show, approve, deny, audit --verify / --tip [src/permitd/cli.py]"]
+    subgraph gate_sg["Execution gate"]
+        gate["Gate: GREEN / YELLOW / RED registry, @gate.tool, call() returns GateResult never raises [src/permitd/gate.py]"]
+        guard["egress guard scan_outbound: credential regexes, env-value match, entropy backstop [src/permitd/guard.py]"]
+        execute["PermitKernel.verify_and_burn + execute: signature recomputes, binding matches, unexpired, wins burn, then runner(**args) [src/permitd/kernel.py]"]
     end
 
-    subgraph kernel_sg["Permit kernel: model, binding, signing"]
-        kernel["PermitKernel: propose / approve / deny / execute, HMAC-SHA256 sign + verify_and_burn, secret loader [src/permitd/kernel.py]"]
-        permit["Permit record, states proposed / approved / denied / executed / expired [src/permitd/permit.py]"]
-        binding["canonical_args + binding_hash sha256(tool + args) [src/permitd/binding.py]"]
+    subgraph audit_sg["Audit log"]
+        auditlog["AuditLog.log: append-only JSONL, prev = sha256 of previous line, fsync, dropped counter [src/permitd/audit.py]"]
+        verify["AuditLog.verify / tip / tail + summarize_args [src/permitd/audit.py]"]
     end
 
-    subgraph store_sg["Store"]
-        sqlite["SqliteStore: durable, atomic CAS burn [src/permitd/store.py]"]
-        memory["MemoryStore: tests, ephemeral [src/permitd/store.py]"]
-        proto["PermitStore protocol: create, get, update, burn (CAS), list; both stores implement it [src/permitd/store.py]"]
+    subgraph surface_sg["CLI and integration surface"]
+        cli["permitd CLI: pending, show, approve, deny, audit -n / --verify / --tip [src/permitd/cli.py]"]
+        paths["default_paths: db -> db.secret + _audit.jsonl, --db / PERMITD_DB [src/permitd/gate.py]"]
+        mcp["MCP example server: read_notes GREEN, write_note RED, pending_permits [examples/mcp_server/server.py]"]
+        pkg["hatchling package 0.2.0, zero deps, extras mcp / dev, console script permitd [pyproject.toml]"]
+        actions["GitHub Actions: pytest matrix 3.10 to 3.14; trusted-publish to PyPI on v* tags [.github/workflows/]"]
+        tests["64 pytest tests across kernel, store, binding, gate, guard, audit, cli [tests/]"]
     end
 
-    subgraph audit_sg["Audit trail"]
-        auditlog["AuditLog: hash-chained JSONL, verify(), tip(), tail(), dropped counter [src/permitd/audit.py]"]
-    end
-
-    agent -->|"MCP stdio"| mcp
-    mcp -->|"gate.call()"| gate
-    agent -.->|"or imports"| gate
-    pyproject -->|"mcp extra"| mcp
-    pyproject -->|"console script"| cli
-    ci -->|"runs"| tests
+    agent -->|"calls tools over MCP stdio"| mcp
+    host -->|"embeds Gate(db=) or PermitKernel directly"| gate
+    mcp -->|"gate.call(name, args, permit_id)"| gate
+    pkg -->|"exposes entry point"| cli
+    pkg -->|"ships"| mcp
+    actions -->|"runs"| tests
     tests -->|"exercise"| kernel
-    release -->|"publishes"| pypi
+    tests -->|"exercise"| gate
 
-    gate -->|"scans args first"| guard
-    gate -->|"propose / execute"| kernel
-    gate -->|"Gate(db=) opens"| sqlite
-    gate -->|"logs runs, refusals"| auditlog
+    gate -->|"scans args before any non-GREEN call"| guard
+    gate -->|"RED without permit_id: proposes"| kernel
+    gate -->|"RED with permit_id: executes"| execute
+    gate -->|"logs GREEN runs and refusals"| auditlog
+    gate -->|"derives store, secret, audit paths"| paths
 
-    operator -->|"approve / deny"| cli
-    cli -->|"mints / kills token"| kernel
-    cli -->|"same permitd.db"| sqlite
-    cli -->|"tail, verify, tip"| auditlog
+    approver -->|"reads full args, approves or denies"| cli
+    cli -->|"resolves same files"| paths
+    cli -->|"approve mints token, deny kills it"| kernel
+    cli -->|"tail, verify chain, print tip"| verify
 
-    kernel -->|"creates, transitions"| permit
-    kernel -->|"hashes tool + args"| binding
-    kernel -->|"talks to"| proto
-    kernel -->|"create / get / update / burn"| sqlite
-    kernel -->|"or in-memory"| memory
-    kernel -->|"logs every outcome"| auditlog
-    kernel -->|"0600 secret"| fs
-    sqlite -->|"permit rows"| fs
-    auditlog -->|"chained lines, fsync"| fs
+    kernel -->|"creates and transitions"| permit
+    kernel -->|"binds to"| binding
+    kernel -->|"signs with"| secret
+    kernel -->|"persists through"| proto
+    execute -->|"recomputes signature with"| secret
+    execute -->|"rechecks tool + args against"| binding
+    execute -->|"atomic burn, one caller wins"| proto
+    execute -->|"logs executed, failed, refused"| auditlog
+    kernel -->|"logs proposed, approved, denied"| auditlog
+    proto -->|"default"| sqlite
+    proto -->|"tests"| memory
+    verify -->|"walks"| auditlog
+
+    sqlite -->|"permit rows"| disk
+    secret -->|"0600 secret file"| disk
+    auditlog -->|"chained lines"| disk
