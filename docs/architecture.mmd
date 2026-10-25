@@ -1,0 +1,69 @@
+%%{init: {"flowchart": {"nodeSpacing": 15, "rankSpacing": 35, "wrappingWidth": 170}}}%%
+%% permitd architecture, drawn from the code as of 2026-10-25
+flowchart TD
+    agent(("agent loop / MCP client (Claude Code)"))
+    operator(("human operator, second terminal"))
+    fs(("filesystem: permitd.db, permitd.db.secret, permitd_audit.jsonl"))
+    pypi(("PyPI: permitd 0.2.0"))
+
+    subgraph pkg_sg["Integration, packaging, CI"]
+        mcp["MCP example server: read_notes GREEN, write_note RED [examples/mcp_server/server.py]"]
+        pyproject["hatchling package, zero deps, extras mcp / dev [pyproject.toml]"]
+        ci["ci: pytest on Python 3.10 to 3.14 [.github/workflows/ci.yml]"]
+        release["release: build + trusted publish on v* tag [.github/workflows/release.yml]"]
+        tests["69 pytest tests: kernel, store, binding, gate, guard, audit, cli [tests/test_*.py]"]
+    end
+
+    subgraph gate_sg["Gate: registry and egress guard"]
+        gate["Gate: GREEN / YELLOW / RED registry, call() dispatch, GateResult [src/permitd/gate.py]"]
+        guard["egress guard scan_outbound: credential shapes, env values, entropy [src/permitd/guard.py]"]
+    end
+
+    subgraph cli_sg["Operator CLI"]
+        cli["permitd CLI: pending, show, approve, deny, audit --verify / --tip [src/permitd/cli.py]"]
+    end
+
+    subgraph kernel_sg["Permit kernel: model, binding, signing"]
+        kernel["PermitKernel: propose / approve / deny / execute, HMAC-SHA256 sign + verify_and_burn, secret loader [src/permitd/kernel.py]"]
+        permit["Permit record, states proposed / approved / denied / executed / expired [src/permitd/permit.py]"]
+        binding["canonical_args + binding_hash sha256(tool + args) [src/permitd/binding.py]"]
+    end
+
+    subgraph store_sg["Store"]
+        sqlite["SqliteStore: durable, atomic CAS burn [src/permitd/store.py]"]
+        memory["MemoryStore: tests, ephemeral [src/permitd/store.py]"]
+        proto["PermitStore protocol: create, get, update, burn (CAS), list; both stores implement it [src/permitd/store.py]"]
+    end
+
+    subgraph audit_sg["Audit trail"]
+        auditlog["AuditLog: hash-chained JSONL, verify(), tip(), tail(), dropped counter [src/permitd/audit.py]"]
+    end
+
+    agent -->|"MCP stdio"| mcp
+    mcp -->|"gate.call()"| gate
+    agent -.->|"or imports"| gate
+    pyproject -->|"mcp extra"| mcp
+    pyproject -->|"console script"| cli
+    ci -->|"runs"| tests
+    tests -->|"exercise"| kernel
+    release -->|"publishes"| pypi
+
+    gate -->|"scans args first"| guard
+    gate -->|"propose / execute"| kernel
+    gate -->|"Gate(db=) opens"| sqlite
+    gate -->|"logs runs, refusals"| auditlog
+
+    operator -->|"approve / deny"| cli
+    cli -->|"mints / kills token"| kernel
+    cli -->|"same permitd.db"| sqlite
+    cli -->|"tail, verify, tip"| auditlog
+
+    kernel -->|"creates, transitions"| permit
+    kernel -->|"hashes tool + args"| binding
+    kernel -->|"talks to"| proto
+    kernel -->|"create / get / update / burn"| sqlite
+    kernel -->|"or in-memory"| memory
+    kernel -->|"logs every outcome"| auditlog
+    kernel -->|"0600 secret"| fs
+    sqlite -->|"permit rows"| fs
+    auditlog -->|"chained lines, fsync"| fs
